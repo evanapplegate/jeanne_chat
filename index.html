@@ -13,8 +13,9 @@
     display: flex; flex-direction: column; height: 100dvh;
   }
   #chat { flex: 1; overflow-y: auto; padding: 16px; }
-  .msg { max-width: 46em; margin: 0 auto 12px; padding: 10px 14px; border-radius: 12px; white-space: pre-wrap; overflow-wrap: break-word; }
-  .msg.user { background: #efece3; margin-left: auto; margin-right: 0; max-width: 34em; }
+  #col { max-width: 640px; margin: 0 auto; }
+  .msg { margin: 0 0 12px; padding: 10px 14px; border-radius: 12px; white-space: pre-wrap; overflow-wrap: break-word; }
+  .msg.user { background: #efece3; margin-left: auto; max-width: 85%; width: fit-content; }
   .msg.assistant { background: #f0efea; }
   .msg img.att { max-width: 200px; max-height: 200px; border-radius: 8px; display: block; margin: 6px 0; }
   .msg .sources { margin-top: 8px; font-size: 13px; }
@@ -22,7 +23,7 @@
   .msg .sources a:hover { text-decoration: underline; }
   .msg a { color: #c96442; }
   .searching { font-size: 12px; opacity: .6; font-style: italic; }
-  #composer { padding: 12px 14px 16px; max-width: 48em; width: 100%; margin: 0 auto; }
+  #composer { padding: 12px 14px calc(16px + env(safe-area-inset-bottom)); max-width: 668px; width: 100%; margin: 0 auto; }
   #thumbs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
   #thumbs .thumb { position: relative; }
   #thumbs img { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; border: 1px solid #ddd; }
@@ -38,7 +39,19 @@
   button { padding: 6px 14px; border: 0; border-radius: 8px; background: #c96442; color: #fff; font: inherit; cursor: pointer; }
   button:disabled { opacity: .5; cursor: default; }
   #imgbtn { background: #efece3; color: #1a1a1a; }
-  .err { color: #c0392b; font-size: 13px; max-width: 46em; margin: 0 auto 12px; }
+  .err { color: #c0392b; font-size: 13px; margin: 0 0 12px; }
+
+  @media (max-width: 640px) {
+    body { font-size: 15px; }
+    #chat { padding: 10px; }
+    .msg { padding: 8px 12px; }
+    .msg.user { max-width: 92%; }
+    .msg img.att { max-width: 150px; max-height: 150px; }
+    #composer { padding: 8px 10px calc(12px + env(safe-area-inset-bottom)); }
+    #composer textarea { font-size: 16px; } /* prevents iOS zoom-on-focus */
+    #thumbs img { width: 52px; height: 52px; }
+    #gate input { width: min(260px, 80vw); }
+  }
 
   #gate {
     position: fixed; inset: 0; background: #FEFAF6; display: flex; flex-direction: column;
@@ -57,7 +70,7 @@
   <div class="bad" id="pwerr"></div>
 </div>
 
-<div id="chat"></div>
+<div id="chat"><div id="col"></div></div>
 
 <div id="composer">
   <div id="thumbs"></div>
@@ -81,6 +94,7 @@ const ENC = {
 };
 
 const chat = document.getElementById("chat");
+const col = document.getElementById("col");
 const input = document.getElementById("input");
 const sendBtn = document.getElementById("send");
 const thumbs = document.getElementById("thumbs");
@@ -161,14 +175,14 @@ function addMsg(cls, text, imgUrls) {
     d.appendChild(im);
   }
   if (text) d.append(text);
-  chat.appendChild(d);
+  col.appendChild(d);
   chat.scrollTop = chat.scrollHeight;
   return d;
 }
 function addErr(text) {
   const d = document.createElement("div");
   d.className = "err"; d.textContent = text;
-  chat.appendChild(d); chat.scrollTop = chat.scrollHeight;
+  col.appendChild(d); chat.scrollTop = chat.scrollHeight;
 }
 
 async function apiCall(body) {
@@ -305,8 +319,33 @@ async function send() {
   }
 }
 
+// Turn markdown [text](url) and bare URLs into <a> elements (DOM-built, no innerHTML).
+function linkify(el, text) {
+  el.textContent = "";
+  const re = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s<>"')\]]+)/g;
+  let last = 0, m;
+  while ((m = re.exec(text))) {
+    el.append(text.slice(last, m.index));
+    const a = document.createElement("a");
+    a.target = "_blank"; a.rel = "noopener";
+    if (m[1]) {
+      a.href = m[2]; a.textContent = m[1];
+      last = re.lastIndex;
+    } else {
+      let url = m[3];
+      const trail = url.match(/[.,;:!?]+$/);   // don't swallow trailing punctuation
+      if (trail) url = url.slice(0, -trail[0].length);
+      a.href = url; a.textContent = url;
+      last = m.index + url.length;
+      re.lastIndex = last;
+    }
+    el.appendChild(a);
+  }
+  el.append(text.slice(last));
+}
+
 function renderText(el, text, cites) {
-  el.textContent = text;
+  linkify(el, text);
   if (cites.length) {
     const src = document.createElement("div");
     src.className = "sources";
