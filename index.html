@@ -65,7 +65,7 @@
   }
   button { padding: 6px 14px; border: 0; border-radius: 8px; background: #c96442; color: #fff; font: inherit; cursor: pointer; }
   button:disabled { opacity: .5; cursor: default; }
-  #imgbtn { background: #efece3; color: #1a1a1a; }
+  #imgbtn, #wipe { background: #efece3; color: #1a1a1a; }
   .err { color: #c0392b; font-size: 13px; margin: 0 0 12px; }
 
   @media (max-width: 640px) {
@@ -106,6 +106,7 @@
     <input id="file" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden>
     <textarea id="input" rows="2" placeholder="Ask anything… (Enter to send, Shift+Enter for newline, paste images ok)"></textarea>
     <button id="send">Send</button>
+    <button id="wipe" title="Erase this conversation">Wipe</button>
   </div>
 </div>
 
@@ -146,7 +147,6 @@ async function tryUnlock() {
       km, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
     const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64(ENC.iv) }, dk, b64(ENC.ct));
     apiKey = new TextDecoder().decode(pt);
-    sessionStorage.setItem("pw", pw);
     document.getElementById("gate").remove();
     input.focus();
   } catch (e) {
@@ -155,11 +155,16 @@ async function tryUnlock() {
 }
 document.getElementById("unlock").onclick = tryUnlock;
 document.getElementById("pw").addEventListener("keydown", e => { if (e.key === "Enter") tryUnlock(); });
-// auto-unlock within the same tab session
-if (sessionStorage.getItem("pw")) {
-  document.getElementById("pw").value = sessionStorage.getItem("pw");
-  tryUnlock();
+
+// Privacy: nothing is ever written to storage. Purge anything older versions left behind.
+try { localStorage.clear(); sessionStorage.clear(); } catch (e) {}
+
+function wipe() {
+  messages = []; pending = [];
+  col.textContent = ""; thumbs.textContent = ""; input.value = "";
+  aborter?.abort();
 }
+window.addEventListener("pagehide", wipe);
 
 // ---------- image attachments ----------
 document.getElementById("imgbtn").onclick = () => fileInput.click();
@@ -411,6 +416,7 @@ function renderText(el, text, cites) {
 }
 
 sendBtn.onclick = send;
+document.getElementById("wipe").onclick = wipe;
 input.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
 });
