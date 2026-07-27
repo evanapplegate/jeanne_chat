@@ -212,9 +212,10 @@ function addErr(text) {
   col.appendChild(d); chat.scrollTop = chat.scrollHeight;
 }
 
-async function apiCall(body) {
+async function apiCall(body, signal) {
   const resp = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
+    signal,
     headers: {
       "content-type": "application/json",
       "x-api-key": apiKey,
@@ -249,12 +250,16 @@ async function readSSE(resp, onEvent) {
   }
 }
 
+let aborter = null;
+
 async function send() {
-  if (busy || !apiKey) return;
+  if (!apiKey) return;
+  if (busy) { aborter?.abort(); return; }   // button doubles as Stop
   const text = input.value.trim();
   if (!text && !pending.length) return;
 
-  busy = true; sendBtn.disabled = true;
+  busy = true; sendBtn.textContent = "Stop";
+  aborter = new AbortController();
   input.value = "";
   const atts = pending; pending = []; thumbs.innerHTML = "";
 
@@ -268,9 +273,12 @@ async function send() {
   const bubble = addMsg("assistant", "");
   const searchNote = document.createElement("div");
   searchNote.className = "searching";
+  let renderedText = "";
+  let cites = [];
 
   try {
     for (let attempt = 0; attempt < 6; attempt++) {   // pause_turn resume loop
+      renderedText = ""; cites = [];
       const resp = await apiCall({
         model: MODEL,
         max_tokens: 64000,
@@ -279,12 +287,10 @@ async function send() {
         system: "You are a helpful assistant. When a question benefits from current information, use web search and cite sources. Keep answers focused.",
         tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 5 }],
         messages,
-      });
+      }, aborter.signal);
 
       const blocks = [];
       let stopReason = null;
-      let renderedText = "";
-      const cites = [];
 
       await readSSE(resp, (ev) => {
         if (ev.type === "content_block_start") {
@@ -336,12 +342,23 @@ async function send() {
     }
   } catch (e) {
     searchNote.remove();
-    addErr("Error: " + e.message);
-    while (messages.length && messages[messages.length - 1].role !== "user") messages.pop();
-    messages.pop();
-    if (!bubble.textContent) bubble.remove();
+    if (e.name === "AbortError") {
+      // Stopped by user: keep whatever streamed as a plain-text assistant turn
+      if (renderedText) {
+        messages.push({ role: "assistant", content: renderedText });
+        bubble.append(" ⏹");
+      } else {
+        bubble.remove();
+      }
+    } else {
+      addErr("Error: " + e.message);
+      while (messages.length && messages[messages.length - 1].role !== "user") messages.pop();
+      messages.pop();
+      if (!bubble.textContent) bubble.remove();
+    }
   } finally {
-    busy = false; sendBtn.disabled = false;
+    busy = false; sendBtn.textContent = "Send";
+    aborter = null;
     input.focus();
   }
 }
